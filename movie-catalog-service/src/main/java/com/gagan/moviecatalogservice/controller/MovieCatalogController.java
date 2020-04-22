@@ -7,19 +7,23 @@
  */
 package com.gagan.moviecatalogservice.controller;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import com.gagan.moviecatalogservice.entity.CatalogItem;
 import com.gagan.moviecatalogservice.entity.Movie;
+import com.gagan.moviecatalogservice.entity.Rating;
 import com.gagan.moviecatalogservice.entity.UserRating;
+import com.gagan.moviecatalogservice.services.MovieInfoService;
+import com.gagan.moviecatalogservice.services.UserRatingService;
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @RestController
@@ -27,26 +31,44 @@ import org.springframework.web.reactive.function.client.WebClient;
 public class MovieCatalogController {
 
     @Autowired
-    private RestTemplate template;
-
+    private MovieInfoService movieInfoService;
+    @Autowired
+    private UserRatingService userRatingService;
+    /**
+     * Successor to RestTemplate
+     * RestTemplate ill be deprecated n later version 
+     * WebClient Requires Spring reactive dependency
+     */
     @Autowired
     private WebClient.Builder webClientBuilder;
 
+    /**
+     * Method that makes a call from 2 microservices
+     * @param userId 
+     * @return
+     */
     @GetMapping("/{userId}")
+    // @HystrixCommand(fallbackMethod = "getFallbackCatalog")
     public List<CatalogItem> getCatalog(@PathVariable("userId") String userId){
         // Synchronous methos
         // UserRating userRating = template.getForObject("http://localhost:2002/ratingsdata/users/" + userId, UserRating.class);
         //  After regstering, we replace it with service client
-        UserRating userRating = template.getForObject("http://movie-rating-service/ratingsdata/users/" + userId, UserRating.class);
+        UserRating userRating = userRatingService.getUserRating(userId);
 
-        // List<Rating> ratings = Arrays.asList(
-        //     new Rating("1234", 4),
-        //     new Rating("5678", 5)
-        // );
-        
         return userRating.getUserRatings().stream().map(rating -> {
-            // Synchronous method
-            Movie movie = template.getForObject("http://movie-info-service/movies/" + rating.getMovieId(), Movie.class);
+            return movieInfoService.getCatalogItem(rating);
+        }).collect(Collectors.toList());
+    }
+    // Initial fallback method 
+    // public List<CatalogItem> getFallbackCatalog(@PathVariable("userId") String userId) {
+    //     System.out.println("Fallback method: MovieInfo");
+    //     return Arrays.asList(new CatalogItem("No Movie", "", 0));
+    // }
+   
+
+
+}
+
 
             // synchrounous, but can be converted to Asynchronous by removing the block
             // webClientBuilder.build()
@@ -55,9 +77,3 @@ public class MovieCatalogController {
             //                 .retrieve()
             //                 .bodyToMono(Movie.class)    // Convert thre returned data into instace of Movie Class, it will be recieved after sometime, similar to Observable<Movie>
             //                 .block();   // Similar to subscribe, also block further execution until a null/actual response is recieved
-
-            return new CatalogItem(movie.getName(), "description", rating.getRating());
-        }).collect(Collectors.toList());
-    }
-
-}
